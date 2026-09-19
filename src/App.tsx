@@ -1261,7 +1261,7 @@ export default function App() {
                       </div>
                     </div>
                     <span className="px-2.5 py-1 rounded-full bg-[#8A2BE2]/10 text-[#8A2BE2] font-black text-xs">
-                      +{calcResults.netProfitPercentage.toFixed(2)}% ROI
+                      +<span>{calcResults.netProfitPercentage.toFixed(2)}</span>% ROI
                     </span>
                   </div>
 
@@ -1302,45 +1302,45 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* CAMPOS DE ENTRADA INTELIGENTES */}
+                  {/* CAMPOS DE ENTRADA INTELIGENTES
+                      Os dois modos ficam montados (hidden) para o React não
+                      remover nós de texto que o tradutor do Chrome possa ter
+                      envelopado — isso gerava tela branca (removeChild). */}
                   <div className="space-y-3 mb-4">
-                    {calcMode === 'byStake1' ? (
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                          <span>Aposta na Casa 1 ({selectedOpportunity.bookmaker1.name})</span>
-                          <span className="text-[11px] text-slate-400 font-normal">Digite para auto-ajustar a Casa 2</span>
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
-                          <input
-                            id="input-stake-1"
-                            type="number"
-                            value={stake1Input}
-                            onChange={(e) => setStake1Input(e.target.value)}
-                            className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#8A2BE2] focus:ring-1 focus:ring-[#8A2BE2]"
-                            placeholder="500"
-                          />
-                        </div>
+                    <div className={calcMode === 'byStake1' ? '' : 'hidden'} aria-hidden={calcMode !== 'byStake1'}>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Aposta na Casa 1 ({selectedOpportunity.bookmaker1.name})</span>
+                        <span className="text-[11px] text-slate-400 font-normal">Digite para auto-ajustar a Casa 2</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
+                        <input
+                          id="input-stake-1"
+                          type="number"
+                          value={stake1Input}
+                          onChange={(e) => setStake1Input(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#8A2BE2] focus:ring-1 focus:ring-[#8A2BE2]"
+                          placeholder="500"
+                        />
                       </div>
-                    ) : (
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                          <span>Investimento Total Desejado</span>
-                          <span className="text-[11px] text-slate-400 font-normal">Distribuição exata de risco zero</span>
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
-                          <input
-                            id="input-total-stake"
-                            type="number"
-                            value={totalStakeInput}
-                            onChange={(e) => setTotalStakeInput(e.target.value)}
-                            className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#8A2BE2] focus:ring-1 focus:ring-[#8A2BE2]"
-                            placeholder="1000"
-                          />
-                        </div>
+                    </div>
+                    <div className={calcMode === 'byTotal' ? '' : 'hidden'} aria-hidden={calcMode !== 'byTotal'}>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Investimento Total Desejado</span>
+                        <span className="text-[11px] text-slate-400 font-normal">Distribuição exata de risco zero</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
+                        <input
+                          id="input-total-stake"
+                          type="number"
+                          value={totalStakeInput}
+                          onChange={(e) => setTotalStakeInput(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#8A2BE2] focus:ring-1 focus:ring-[#8A2BE2]"
+                          placeholder="1000"
+                        />
                       </div>
-                    )}
+                    </div>
 
                     {/* BOTÕES RÁPIDOS DE VALOR */}
                     <div className="flex items-center gap-1.5">
