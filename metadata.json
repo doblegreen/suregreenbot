@@ -1,0 +1,6 @@
+{
+  "name": "SureGreenBet",
+  "description": "Dashboard de Arbitragem Esportiva SUREBOT PRO com Scanner em Tempo Real, Calculadora Inteligente e Gestão de Afiliados",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes neonGlow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.1);
+    border-color: rgba(138, 43, 226, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(138, 43, 226, 0.45), 0 0 30px rgba(138, 43, 226, 0.2);
+    border-color: rgba(138, 43, 226, 0.85);
+  }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.animate-marquee {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marquee 30s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+.card-neon-glow {
+  border: 1.5px solid rgba(138, 43, 226, 0.45);
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.25);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-neon-glow:hover {
+  animation: neonGlow 2.5s infinite ease-in-out;
+  border-color: #8A2BE2;
+  box-shadow: 0 0 22px rgba(138, 43, 226, 0.45), 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.glassmorphism-support {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
