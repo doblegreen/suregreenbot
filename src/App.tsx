@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient, RealtimeChannel, Session } from '@supabase/supabase-js';
 import {
+  COVERAGE_PAIR,
+  fetchLiveCoverageOpportunities,
+  isFreshSurebetRow,
+  isLiveSurebetRow,
+  type ScanRow,
+} from './lib/surebetEngine';
+import {
   TrendingUp,
   Calculator,
   CreditCard,
@@ -64,6 +71,8 @@ export interface SurebetOpportunity {
   };
   status: 'active' | 'updated' | 'closing_soon';
   foundAt: string;
+  isLive: boolean;
+  liveLabel?: string;
 }
 
 export interface NetworkMember {
@@ -105,134 +114,32 @@ export interface TutorialVideo {
   keyPoints: string[];
 }
 
-// --- INITIAL MOCK DATA ---
-const INITIAL_OPPORTUNITIES: SurebetOpportunity[] = [
-  {
-    id: 'sb-101',
-    sport: 'Futebol',
-    sportIcon: '⚽',
-    event: 'Real Madrid vs Manchester City',
-    league: 'UEFA Champions League',
-    startTime: 'Hoje às 16:00',
-    profitPercentage: 4.82,
-    bookmaker1: {
-      name: 'Betano',
-      logoColor: '#F05A28',
-      market: 'Mais de 2.5 Gols',
-      odd: 2.15,
-      link: 'https://br.betano.com',
-    },
-    bookmaker2: {
-      name: 'Pinnacle',
-      logoColor: '#C01414',
-      market: 'Menos de 2.5 Gols',
-      odd: 2.10,
-      link: 'https://www.pinnacle.com',
-    },
-    status: 'active',
-    foundAt: 'Há 12s',
+const EMPTY_CALCULATOR: SurebetOpportunity = {
+  id: 'empty',
+  sport: 'Futebol',
+  sportIcon: '⚽',
+  event: 'Selecione uma oportunidade',
+  league: 'Aguardando scanner',
+  startTime: '—',
+  profitPercentage: 0,
+  bookmaker1: {
+    name: COVERAGE_PAIR.book1.name,
+    logoColor: COVERAGE_PAIR.book1.color,
+    market: 'Casa 1',
+    odd: 2.0,
+    link: COVERAGE_PAIR.book1.link,
   },
-  {
-    id: 'sb-102',
-    sport: 'Basquete',
-    sportIcon: '🏀',
-    event: 'Boston Celtics vs LA Lakers',
-    league: 'NBA - Temporada Regular',
-    startTime: 'Hoje às 21:30',
-    profitPercentage: 5.18,
-    bookmaker1: {
-      name: 'Bet365',
-      logoColor: '#007A3D',
-      market: 'Boston Celtics (-5.5)',
-      odd: 2.05,
-      link: 'https://www.bet365.com',
-    },
-    bookmaker2: {
-      name: 'Betfair',
-      logoColor: '#FFB80C',
-      market: 'LA Lakers (+5.5)',
-      odd: 2.22,
-      link: 'https://www.betfair.com',
-    },
-    status: 'updated',
-    foundAt: 'Há 45s',
+  bookmaker2: {
+    name: COVERAGE_PAIR.book2.name,
+    logoColor: COVERAGE_PAIR.book2.color,
+    market: 'Casa 2',
+    odd: 2.0,
+    link: COVERAGE_PAIR.book2.link,
   },
-  {
-    id: 'sb-103',
-    sport: 'Tênis',
-    sportIcon: '🎾',
-    event: 'C. Alcaraz vs J. Sinner',
-    league: 'ATP Masters 1000 - Semifinal',
-    startTime: 'Amanhã às 14:00',
-    profitPercentage: 6.45,
-    bookmaker1: {
-      name: 'KTO',
-      logoColor: '#E60000',
-      market: 'Vencedor do 1º Set: Alcaraz',
-      odd: 1.95,
-      link: 'https://kto.com',
-    },
-    bookmaker2: {
-      name: 'Novibet',
-      logoColor: '#172738',
-      market: 'Vencedor do 1º Set: Sinner',
-      odd: 2.38,
-      link: 'https://www.novibet.com',
-    },
-    status: 'active',
-    foundAt: 'Há 1m',
-  },
-  {
-    id: 'sb-104',
-    sport: 'Futebol',
-    sportIcon: '⚽',
-    event: 'Flamengo vs Palmeiras',
-    league: 'Brasileirão Série A',
-    startTime: 'Domingo às 16:00',
-    profitPercentage: 3.92,
-    bookmaker1: {
-      name: 'Sportingbet',
-      logoColor: '#0090D0',
-      market: 'Ambas as Equipes Marcam: SIM',
-      odd: 2.08,
-      link: 'https://sports.sportingbet.com',
-    },
-    bookmaker2: {
-      name: 'Pinnacle',
-      logoColor: '#C01414',
-      market: 'Ambas as Equipes Marcam: NÃO',
-      odd: 2.09,
-      link: 'https://www.pinnacle.com',
-    },
-    status: 'closing_soon',
-    foundAt: 'Há 2m',
-  },
-  {
-    id: 'sb-105',
-    sport: 'eSports',
-    sportIcon: '🎮',
-    event: 'Furia vs Natus Vincere',
-    league: 'CS2 Major Championship',
-    startTime: 'Hoje às 18:30',
-    profitPercentage: 4.25,
-    bookmaker1: {
-      name: 'Betway',
-      logoColor: '#000000',
-      market: 'Furia vence Mapa 1',
-      odd: 2.20,
-      link: 'https://betway.com',
-    },
-    bookmaker2: {
-      name: 'Betano',
-      logoColor: '#F05A28',
-      market: 'NaVi vence Mapa 1',
-      odd: 2.02,
-      link: 'https://br.betano.com',
-    },
-    status: 'active',
-    foundAt: 'Há 3m',
-  },
-];
+  status: 'active',
+  foundAt: '—',
+  isLive: false,
+};
 
 const EMPTY_NETWORK_LEVELS: NetworkLevel[] = [
   { level: 1, percentage: 10, commissionPerActive: 10, activeCount: 0, totalMembers: 0, monthlyRevenue: 0, members: [] },
@@ -323,7 +230,8 @@ export const SUPABASE_ANON_KEY =
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function formatStartTime(value: unknown): string {
+function formatStartTime(value: unknown, isLive = false, liveLabel?: string | null): string {
+  if (isLive) return liveLabel || 'AO VIVO';
   if (!value) return 'Hoje';
   if (typeof value === 'string' && !value.includes('T') && Number.isNaN(Date.parse(value))) {
     return value;
@@ -348,10 +256,40 @@ function formatFoundAt(value: unknown): string {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-// Mapeia schema Supabase (surebets) e payloads legados/JSON
-function mapSupabaseRecord(row: any): SurebetOpportunity {
+function mapScanRow(row: ScanRow): SurebetOpportunity {
   return {
-    id: String(row.id || `sb-${Date.now()}`),
+    id: row.opportunity_key,
+    sport: row.sport,
+    sportIcon: row.sport_icon,
+    event: row.event_name,
+    league: row.league,
+    startTime: formatStartTime(row.start_time, row.is_live, row.live_label),
+    profitPercentage: row.profit_percent,
+    bookmaker1: {
+      name: row.bookmaker_1,
+      logoColor: row.bookmaker_1_color,
+      market: row.market_1,
+      odd: row.odd_1,
+      link: row.link_1,
+    },
+    bookmaker2: {
+      name: row.bookmaker_2,
+      logoColor: row.bookmaker_2_color,
+      market: row.market_2,
+      odd: row.odd_2,
+      link: row.link_2,
+    },
+    status: row.status,
+    foundAt: formatFoundAt(row.last_seen_at),
+    isLive: row.is_live,
+    liveLabel: row.live_label || undefined,
+  };
+}
+
+function mapSupabaseRecord(row: any): SurebetOpportunity {
+  const isLive = isLiveSurebetRow(row);
+  return {
+    id: String(row.opportunity_key || row.id || `sb-${Date.now()}`),
     sport: row.sport || 'Futebol',
     sportIcon: row.sport_icon || row.sportIcon || '⚽',
     event:
@@ -359,29 +297,46 @@ function mapSupabaseRecord(row: any): SurebetOpportunity {
       row.event ||
       `${row.home_team || 'Time 1'} vs ${row.away_team || 'Time 2'}`,
     league: row.league || 'Campeonato',
-    startTime: formatStartTime(row.start_time || row.startTime),
+    startTime: formatStartTime(row.start_time || row.startTime, isLive, row.live_label),
     profitPercentage: Number(
-      row.profit_percent ?? row.profit_percentage ?? row.profitPercentage ?? 4.2
+      row.profit_percent ?? row.profit_percentage ?? row.profitPercentage ?? 0
     ),
     bookmaker1: {
-      name: row.bookmaker_1 || row.bookmaker_1_name || row.bookmaker1?.name || 'Betano',
-      logoColor:
-        row.bookmaker_1_color || row.bookmaker1?.logoColor || '#F05A28',
+      name: row.bookmaker_1 || row.bookmaker_1_name || row.bookmaker1?.name || COVERAGE_PAIR.book1.name,
+      logoColor: row.bookmaker_1_color || row.bookmaker1?.logoColor || COVERAGE_PAIR.book1.color,
       market: row.market_1 || row.bookmaker_1_market || row.bookmaker1?.market || 'Mais de 2.5 Gols',
       odd: Number(row.odd_1 ?? row.bookmaker_1_odd ?? row.bookmaker1?.odd ?? 2.1),
-      link: row.link_1 || row.bookmaker_1_link || row.bookmaker1?.link || 'https://br.betano.com',
+      link: row.link_1 || row.bookmaker_1_link || row.bookmaker1?.link || COVERAGE_PAIR.book1.link,
     },
     bookmaker2: {
-      name: row.bookmaker_2 || row.bookmaker_2_name || row.bookmaker2?.name || 'Pinnacle',
-      logoColor:
-        row.bookmaker_2_color || row.bookmaker2?.logoColor || '#C01414',
+      name: row.bookmaker_2 || row.bookmaker_2_name || row.bookmaker2?.name || COVERAGE_PAIR.book2.name,
+      logoColor: row.bookmaker_2_color || row.bookmaker2?.logoColor || COVERAGE_PAIR.book2.color,
       market: row.market_2 || row.bookmaker_2_market || row.bookmaker2?.market || 'Menos de 2.5 Gols',
       odd: Number(row.odd_2 ?? row.bookmaker_2_odd ?? row.bookmaker2?.odd ?? 2.12),
-      link: row.link_2 || row.bookmaker_2_link || row.bookmaker2?.link || 'https://www.pinnacle.com',
+      link: row.link_2 || row.bookmaker_2_link || row.bookmaker2?.link || COVERAGE_PAIR.book2.link,
     },
     status: row.status || 'active',
-    foundAt: formatFoundAt(row.found_at || row.foundAt),
+    foundAt: formatFoundAt(row.last_seen_at || row.found_at || row.foundAt),
+    isLive,
+    liveLabel: row.live_label || undefined,
   };
+}
+
+function sortOpportunities(items: SurebetOpportunity[]): SurebetOpportunity[] {
+  return [...items].sort((a, b) => {
+    if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
+    if (a.status === 'closing_soon' && b.status !== 'closing_soon') return 1;
+    if (b.status === 'closing_soon' && a.status !== 'closing_soon') return -1;
+    return b.profitPercentage - a.profitPercentage;
+  });
+}
+
+function pickSelection(
+  current: SurebetOpportunity,
+  list: SurebetOpportunity[]
+): SurebetOpportunity {
+  if (list.length === 0) return EMPTY_CALCULATOR;
+  return list.find((item) => item.id === current.id) || list[0];
 }
 
 export default function App() {
@@ -389,11 +344,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'operacoes' | 'assinatura' | 'afiliados' | 'tutoriais'>('operacoes');
 
   // Surebets state
-  const [opportunities, setOpportunities] = useState<SurebetOpportunity[]>(INITIAL_OPPORTUNITIES);
-  const [selectedOpportunity, setSelectedOpportunity] = useState<SurebetOpportunity>(INITIAL_OPPORTUNITIES[0]);
-  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'simulated'>('connected');
+  const [opportunities, setOpportunities] = useState<SurebetOpportunity[]>([]);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<SurebetOpportunity>(EMPTY_CALCULATOR);
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'simulated'>('connecting');
   const [lastEventTime, setLastEventTime] = useState<string>('Agora');
-  const [isSimulatingEvents, setIsSimulatingEvents] = useState<boolean>(true);
+  const [feedLoading, setFeedLoading] = useState<boolean>(true);
+  const [feedFilter, setFeedFilter] = useState<'all' | 'live'>('live');
+  const [coveragePairLabel, setCoveragePairLabel] = useState<string>(
+    `${COVERAGE_PAIR.book1.name} × ${COVERAGE_PAIR.book2.name}`
+  );
 
   // Calculator State
   const [stake1Input, setStake1Input] = useState<string>('500');
@@ -560,29 +519,60 @@ export default function App() {
     });
   }, [session?.user?.id]);
 
-  // --- INITIAL SUPABASE FETCH ---
+  const applyFeed = (incoming: SurebetOpportunity[]) => {
+    const next = sortOpportunities(incoming);
+    setOpportunities(next);
+    setSelectedOpportunity((cur) => pickSelection(cur, next));
+    if (next[0]) {
+      setCoveragePairLabel(`${next[0].bookmaker1.name} × ${next[0].bookmaker2.name}`);
+    }
+    setLastEventTime(
+      new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    );
+  };
+
   useEffect(() => {
-    async function fetchInitialSurebets() {
+    let cancelled = false;
+
+    async function loadFeed() {
       try {
         const { data, error } = await supabase
           .from('surebets')
           .select('*')
-          .limit(25);
+          .order('profit_percent', { ascending: false })
+          .limit(40);
 
-        if (!error && data && data.length > 0) {
-          const mapped = data.map(mapSupabaseRecord);
-          setOpportunities(mapped);
-          setSelectedOpportunity(mapped[0]);
+        const fresh = !error && data
+          ? data.filter(isFreshSurebetRow).map(mapSupabaseRecord)
+          : [];
+
+        if (cancelled) return;
+
+        if (fresh.length > 0) {
+          applyFeed(fresh);
           setRealtimeStatus('connected');
+          return;
         }
+
+        const liveRows = await fetchLiveCoverageOpportunities();
+        if (cancelled) return;
+        applyFeed(liveRows.map(mapScanRow));
+        setRealtimeStatus('simulated');
       } catch (err) {
-        console.info('Supabase initial fetch info:', err);
+        console.info('Falha ao carregar feed de surebets:', err);
+      } finally {
+        setFeedLoading(false);
       }
     }
-    fetchInitialSurebets();
+
+    loadFeed();
+    const poll = window.setInterval(loadFeed, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
   }, []);
 
-  // --- SUPABASE REALTIME SUBSCRIPTION EFFECT ---
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
     try {
@@ -592,28 +582,33 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'surebets' },
           (payload) => {
-            console.log('Realtime change received from Supabase:', payload);
             setLastEventTime(
               new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             );
-            if (payload.eventType === 'INSERT' && payload.new) {
+            if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+              if (!isFreshSurebetRow(payload.new as any)) return;
               const mapped = mapSupabaseRecord(payload.new);
-              setOpportunities((prev) => [mapped, ...prev]);
-            } else if (payload.eventType === 'UPDATE' && payload.new) {
-              const mapped = mapSupabaseRecord(payload.new);
-              setOpportunities((prev) =>
-                prev.map((item) => (item.id === mapped.id ? mapped : item))
-              );
+              setOpportunities((prev) => sortOpportunities([
+                mapped,
+                ...prev.filter((item) => item.id !== mapped.id),
+              ]));
               setSelectedOpportunity((cur) => (cur.id === mapped.id ? mapped : cur));
+              setRealtimeStatus('connected');
             } else if (payload.eventType === 'DELETE' && payload.old) {
-              setOpportunities((prev) => prev.filter((item) => item.id !== String(payload.old.id)));
+              const oldId = String(
+                (payload.old as { opportunity_key?: string; id?: string }).opportunity_key ||
+                  payload.old.id
+              );
+              setOpportunities((prev) => {
+                const next = prev.filter((item) => item.id !== oldId);
+                setSelectedOpportunity((cur) => pickSelection(cur, next));
+                return next;
+              });
             }
           }
         )
         .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            setRealtimeStatus('connected');
-          }
+          if (status === 'SUBSCRIBED') setRealtimeStatus('connected');
         });
     } catch (err) {
       console.warn('Realtime Supabase subscription error/fallback:', err);
@@ -621,58 +616,17 @@ export default function App() {
     }
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
-  // --- REALTIME WEBSOCKET SIMULATOR (To provide instant live changes) ---
-  useEffect(() => {
-    if (!isSimulatingEvents) return;
-
-    const interval = setInterval(() => {
-      // randomly pick an opportunity to micro-update odds and profit
-      setOpportunities((prev) => {
-        if (prev.length === 0) return prev;
-        const targetIndex = Math.floor(Math.random() * prev.length);
-        const item = prev[targetIndex];
-
-        // Slight delta
-        const delta = (Math.random() * 0.08 - 0.03);
-        const newOdd1 = Number(Math.max(1.5, item.bookmaker1.odd + delta).toFixed(2));
-        const newOdd2 = Number(Math.max(1.5, item.bookmaker2.odd + (Math.random() * 0.06 - 0.02)).toFixed(2));
-
-        // recalculate profit
-        const invSum = (1 / newOdd1) + (1 / newOdd2);
-        const newProfit = Number(((1 - invSum) / invSum * 100).toFixed(2));
-
-        const updated: SurebetOpportunity = {
-          ...item,
-          bookmaker1: { ...item.bookmaker1, odd: newOdd1 },
-          bookmaker2: { ...item.bookmaker2, odd: newOdd2 },
-          profitPercentage: newProfit > 0 ? newProfit : 3.5,
-          status: 'updated',
-          foundAt: 'Agora mesmo',
-        };
-
-        const next = [...prev];
-        next[targetIndex] = updated;
-
-        // also update selected if currently viewing it
-        if (selectedOpportunity.id === updated.id) {
-          setSelectedOpportunity(updated);
-        }
-
-        setLastEventTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-        return next;
-      });
-    }, 9000);
-
-    return () => clearInterval(interval);
-  }, [isSimulatingEvents, selectedOpportunity]);
-
   // --- ARBITRAGE CALCULATIONS ---
+  const visibleOpportunities = useMemo(() => {
+    if (feedFilter === 'live') return opportunities.filter((item) => item.isLive);
+    return opportunities;
+  }, [opportunities, feedFilter]);
+
+  const liveCount = useMemo(() => opportunities.filter((item) => item.isLive).length, [opportunities]);
   const calcResults = useMemo(() => {
     const o1 = selectedOpportunity.bookmaker1.odd;
     const o2 = selectedOpportunity.bookmaker2.odd;
@@ -1063,31 +1017,43 @@ export default function App() {
                   <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                     Scanner de Arbitragem em Tempo Real
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                      {opportunities.length} Oportunidades
+                      {visibleOpportunities.length} Oportunidades
                     </span>
+                    {liveCount > 0 && (
+                      <span className="text-xs font-black px-2 py-0.5 rounded-full bg-red-500 text-white">
+                        {liveCount} AO VIVO
+                      </span>
+                    )}
                   </h2>
                   <p className="text-xs text-slate-500 flex items-center gap-2">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Sincronizado via WebSockets Supabase • Atualizado: {lastEventTime}
+                    <span className={`inline-block w-2 h-2 rounded-full ${realtimeStatus === 'connected' ? 'bg-emerald-500' : 'bg-amber-400'}`}></span>
+                    {coveragePairLabel} • {realtimeStatus === 'connected' ? 'Supabase Realtime' : 'Feed ao vivo'} • Atualizado: {lastEventTime}
                   </p>
                 </div>
               </div>
 
               {/* CONTROLES DO SCANNER */}
               <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                <button
-                  id="btn-toggle-simulator"
-                  onClick={() => setIsSimulatingEvents(!isSimulatingEvents)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition ${
-                    isSimulatingEvents
-                      ? 'bg-purple-50 text-[#8A2BE2] border-purple-200 hover:bg-purple-100'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                  title="Simula chegadas instantâneas de novas odds para testar a interface"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSimulatingEvents ? 'animate-spin' : ''}`} />
-                  {isSimulatingEvents ? 'Live Feed Automático Ativo' : 'Pausar Simulação'}
-                </button>
+                <div className="flex items-center p-1 bg-white rounded-xl border border-slate-200 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setFeedFilter('live')}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      feedFilter === 'live' ? 'bg-[#8A2BE2] text-white' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Ao vivo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFeedFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      feedFilter === 'all' ? 'bg-[#8A2BE2] text-white' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Todas
+                  </button>
+                </div>
 
                 <div className="hidden sm:flex items-center bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-600 gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -1110,7 +1076,38 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4">
-                  {opportunities.map((item) => {
+                  {feedLoading && visibleOpportunities.length === 0 && (
+                    <div className="bg-white rounded-2xl p-8 text-center border border-slate-200">
+                      <RefreshCw className="w-5 h-5 animate-spin text-[#8A2BE2] mx-auto mb-2" />
+                      <p className="text-sm font-bold text-slate-700">Escaneando jogos ao vivo nas duas casas...</p>
+                      <p className="text-xs text-slate-400 mt-1">{coveragePairLabel}</p>
+                    </div>
+                  )}
+
+                  {!feedLoading && visibleOpportunities.length === 0 && (
+                    <div className="bg-white rounded-2xl p-8 text-center border border-slate-200">
+                      <Radio className="w-5 h-5 text-slate-400 mx-auto mb-2" />
+                      <p className="text-sm font-bold text-slate-700">
+                        {feedFilter === 'live'
+                          ? 'Nenhum jogo ao vivo com surebet neste momento'
+                          : 'Nenhuma oportunidade ativa'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        O scanner só mantém jogos frescos. Encerrados saem do feed em segundos, sem piscar.
+                      </p>
+                      {feedFilter === 'live' && opportunities.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFeedFilter('all')}
+                          className="mt-3 px-3 py-1.5 rounded-lg bg-[#FFD700] text-black text-xs font-black"
+                        >
+                          Ver pré-jogo
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {visibleOpportunities.map((item) => {
                     const isSelected = selectedOpportunity.id === item.id;
                     return (
                       <div
@@ -1121,17 +1118,23 @@ export default function App() {
                           isSelected
                             ? 'ring-2 ring-[#8A2BE2] bg-white shadow-lg'
                             : 'hover:bg-white hover:shadow-md'
-                        }`}
+                        } ${item.status === 'closing_soon' ? 'opacity-80' : ''}`}
                       >
                         {/* CARD HEADER */}
                         <div className="flex items-center justify-between mb-3 border-b border-slate-200/70 pb-2.5">
                           <div className="flex items-center gap-2">
                             <span className="text-lg">{item.sportIcon}</span>
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-extrabold uppercase text-slate-500 tracking-wider">
                                   {item.sport} • {item.league}
                                 </span>
+                                {item.isLive && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-500 text-white text-[10px] font-black">
+                                    <Radio className="w-3 h-3" />
+                                    AO VIVO
+                                  </span>
+                                )}
                               </div>
                               <h3 className="text-sm md:text-base font-extrabold text-slate-900 leading-tight">
                                 {item.event}
@@ -1439,20 +1442,24 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-2">
                     <a
                       id="btn-link-bookmaker-1"
-                      href={selectedOpportunity.bookmaker1.link}
+                      href={selectedOpportunity.id === 'empty' ? undefined : selectedOpportunity.bookmaker1.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold text-center flex items-center justify-center gap-1.5 transition shadow-sm"
+                      className={`py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold text-center flex items-center justify-center gap-1.5 transition shadow-sm ${
+                        selectedOpportunity.id === 'empty' ? 'pointer-events-none opacity-40' : ''
+                      }`}
                     >
                       Abrir {selectedOpportunity.bookmaker1.name}
                       <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                     <a
                       id="btn-link-bookmaker-2"
-                      href={selectedOpportunity.bookmaker2.link}
+                      href={selectedOpportunity.id === 'empty' ? undefined : selectedOpportunity.bookmaker2.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="py-2.5 px-3 rounded-xl bg-[#FFD700] hover:bg-amber-400 text-black text-xs font-black text-center flex items-center justify-center gap-1.5 transition shadow-sm"
+                      className={`py-2.5 px-3 rounded-xl bg-[#FFD700] hover:bg-amber-400 text-black text-xs font-black text-center flex items-center justify-center gap-1.5 transition shadow-sm ${
+                        selectedOpportunity.id === 'empty' ? 'pointer-events-none opacity-40' : ''
+                      }`}
                     >
                       Abrir {selectedOpportunity.bookmaker2.name}
                       <ExternalLink className="w-3.5 h-3.5" />
