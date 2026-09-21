@@ -335,8 +335,24 @@ function pickSelection(
   current: SurebetOpportunity,
   list: SurebetOpportunity[]
 ): SurebetOpportunity {
-  if (list.length === 0) return EMPTY_CALCULATOR;
-  return list.find((item) => item.id === current.id) || list[0];
+  if (current.id !== 'empty') {
+    return list.find((item) => item.id === current.id) || current;
+  }
+  return list[0] || EMPTY_CALCULATOR;
+}
+
+function mergeOpportunityList(
+  prev: SurebetOpportunity[],
+  incoming: SurebetOpportunity[],
+  selectedId?: string
+): SurebetOpportunity[] {
+  const next = new Map(prev.map((item) => [item.id, item]));
+  for (const item of incoming) next.set(item.id, item);
+  if (selectedId && selectedId !== 'empty') {
+    const selected = prev.find((item) => item.id === selectedId);
+    if (selected && !next.has(selectedId)) next.set(selectedId, selected);
+  }
+  return sortOpportunities([...next.values()]);
 }
 
 export default function App() {
@@ -519,12 +535,27 @@ export default function App() {
     });
   }, [session?.user?.id]);
 
+  const pendingDeletes = useRef<Map<string, number>>(new Map());
+  const selectedIdRef = useRef<string>('empty');
+  selectedIdRef.current = selectedOpportunity.id;
+
+  const cancelPendingDelete = (id: string) => {
+    const timer = pendingDeletes.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      pendingDeletes.current.delete(id);
+    }
+  };
+
   const applyFeed = (incoming: SurebetOpportunity[]) => {
-    const next = sortOpportunities(incoming);
-    setOpportunities(next);
-    setSelectedOpportunity((cur) => pickSelection(cur, next));
-    if (next[0]) {
-      setCoveragePairLabel(`${next[0].bookmaker1.name} × ${next[0].bookmaker2.name}`);
+    for (const item of incoming) cancelPendingDelete(item.id);
+    setOpportunities((prev) => {
+      const next = mergeOpportunityList(prev, incoming, selectedIdRef.current);
+      setSelectedOpportunity((cur) => pickSelection(cur, next));
+      return next;
+    });
+    if (incoming[0]) {
+      setCoveragePairLabel(`${incoming[0].bookmaker1.name} × ${incoming[0].bookmaker2.name}`);
     }
     setLastEventTime(
       new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -533,6 +564,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let bootstrapped = false;
 
     async function loadFeed() {
       try {
@@ -549,14 +581,20 @@ export default function App() {
         if (cancelled) return;
 
         if (fresh.length > 0) {
+          bootstrapped = true;
           applyFeed(fresh);
           setRealtimeStatus('connected');
           return;
         }
 
+        if (bootstrapped) return;
+
         const liveRows = await fetchLiveCoverageOpportunities();
         if (cancelled) return;
-        applyFeed(liveRows.map(mapScanRow));
+        if (liveRows.length > 0) {
+          bootstrapped = true;
+          applyFeed(liveRows.map(mapScanRow));
+        }
         setRealtimeStatus('simulated');
       } catch (err) {
         console.info('Falha ao carregar feed de surebets:', err);
@@ -588,10 +626,10 @@ export default function App() {
             if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
               if (!isFreshSurebetRow(payload.new as any)) return;
               const mapped = mapSupabaseRecord(payload.new);
-              setOpportunities((prev) => sortOpportunities([
-                mapped,
-                ...prev.filter((item) => item.id !== mapped.id),
-              ]));
+              cancelPendingDelete(mapped.id);
+              setOpportunities((prev) =>
+                sortOpportunities([mapped, ...prev.filter((item) => item.id !== mapped.id)])
+              );
               setSelectedOpportunity((cur) => (cur.id === mapped.id ? mapped : cur));
               setRealtimeStatus('connected');
             } else if (payload.eventType === 'DELETE' && payload.old) {
@@ -599,11 +637,16 @@ export default function App() {
                 (payload.old as { opportunity_key?: string; id?: string }).opportunity_key ||
                   payload.old.id
               );
-              setOpportunities((prev) => {
-                const next = prev.filter((item) => item.id !== oldId);
-                setSelectedOpportunity((cur) => pickSelection(cur, next));
-                return next;
-              });
+              if (pendingDeletes.current.has(oldId)) return;
+              const timer = window.setTimeout(() => {
+                pendingDeletes.current.delete(oldId);
+                setOpportunities((prev) => {
+                  const next = prev.filter((item) => item.id !== oldId);
+                  setSelectedOpportunity((cur) => pickSelection(cur, next));
+                  return next;
+                });
+              }, 25000);
+              pendingDeletes.current.set(oldId, timer);
             }
           }
         )
@@ -616,6 +659,8 @@ export default function App() {
     }
 
     return () => {
+      pendingDeletes.current.forEach((timer) => window.clearTimeout(timer));
+      pendingDeletes.current.clear();
       if (channel) supabase.removeChannel(channel);
     };
   }, []);
